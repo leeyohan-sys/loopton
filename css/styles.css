@@ -785,6 +785,30 @@ button {
   gap: 0.95rem;
 }
 
+.sliders-top {
+  margin-bottom: 0.15rem;
+}
+
+@media (min-width: 640px) {
+  .sliders-top {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .sliders-top .nudge {
+    width: 44px;
+    height: 44px;
+    font-size: 1.35rem;
+  }
+
+  .sliders-top .nudge-group output {
+    min-width: 4rem;
+    font-size: 1rem;
+  }
+}
+
 .slider-block {
   display: grid;
   gap: 0.35rem;
@@ -1030,8 +1054,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (min-width: 760px) {
-  .sliders {
-    grid-template-columns: 1.2fr 1.2fr 0.8fr;
+  .sliders:not(.sliders-top) {
+    grid-template-columns: 1fr 1fr;
     gap: 1.25rem;
     align-items: start;
   }

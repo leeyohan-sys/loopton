@@ -75,10 +75,6 @@ const els = {
   pitchValue: $('pitchValue'),
   pitchDown: $('pitchDown'),
   pitchUp: $('pitchUp'),
-  volumeSlider: $('volumeSlider'),
-  volumeValue: $('volumeValue'),
-  volumeDown: $('volumeDown'),
-  volumeUp: $('volumeUp'),
   linkRate: $('linkRate'),
 };
 
@@ -575,10 +571,15 @@ els.clearAbBtn.addEventListener('click', () => {
 });
 
 /* —— 슬라이더 —— */
+const TEMPO_STEP = 5; // %
+const PITCH_STEP = 1; // 반음
+
 function applyTempo(pct) {
   const min = Number(els.tempoSlider.min);
   const max = Number(els.tempoSlider.max);
-  const next = Math.max(min, Math.min(max, Math.round(pct)));
+  // 5% 단위로 맞춤
+  const snapped = Math.round(pct / TEMPO_STEP) * TEMPO_STEP;
+  const next = Math.max(min, Math.min(max, snapped));
   els.tempoSlider.value = String(next);
   engine.setTempo(next / 100);
   els.tempoValue.textContent = `${next}%`;
@@ -596,33 +597,26 @@ function applyPitch(st, { integer = false } = {}) {
   els.pitchValue.textContent = formatPitch(next);
 }
 
-function applyVolume(v) {
-  const min = Number(els.volumeSlider.min);
-  const max = Number(els.volumeSlider.max);
-  const next = Math.max(min, Math.min(max, Math.round(v)));
-  els.volumeSlider.value = String(next);
-  engine.setVolume(next / 100);
-  els.volumeValue.textContent = `${next}%`;
-}
-
 els.tempoSlider.addEventListener('input', () => {
   applyTempo(Number(els.tempoSlider.value));
 });
 
 els.pitchSlider.addEventListener('input', () => {
-  applyPitch(Number(els.pitchSlider.value));
+  applyPitch(Number(els.pitchSlider.value), { integer: true });
 });
 
-els.volumeSlider.addEventListener('input', () => {
-  applyVolume(Number(els.volumeSlider.value));
-});
+function onTempoNudge(delta) {
+  applyTempo(Number(els.tempoSlider.value) + delta);
+}
 
-els.tempoDown.addEventListener('click', () => applyTempo(Number(els.tempoSlider.value) - 5));
-els.tempoUp.addEventListener('click', () => applyTempo(Number(els.tempoSlider.value) + 5));
-els.pitchDown.addEventListener('click', () => applyPitch(Number(els.pitchSlider.value) - 1, { integer: true }));
-els.pitchUp.addEventListener('click', () => applyPitch(Number(els.pitchSlider.value) + 1, { integer: true }));
-els.volumeDown.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) - 5));
-els.volumeUp.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) + 5));
+function onPitchNudge(delta) {
+  applyPitch(Number(els.pitchSlider.value) + delta, { integer: true });
+}
+
+els.tempoDown.addEventListener('click', () => onTempoNudge(-TEMPO_STEP));
+els.tempoUp.addEventListener('click', () => onTempoNudge(TEMPO_STEP));
+els.pitchDown.addEventListener('click', () => onPitchNudge(-PITCH_STEP));
+els.pitchUp.addEventListener('click', () => onPitchNudge(PITCH_STEP));
 
 els.linkRate.addEventListener('change', () => {
   engine.setLinkRate(els.linkRate.checked);
@@ -797,7 +791,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-engine.setVolume(Number(els.volumeSlider.value) / 100);
+engine.setVolume(0.8);
 
 (async function init() {
   await refreshPlaylistSelect();

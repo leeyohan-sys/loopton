@@ -96,6 +96,38 @@
         </section>
 
         <section class="player" id="player" aria-label="플레이어">
+          <div class="sliders sliders-top">
+            <div class="slider-block">
+              <div class="slider-head">
+                <label for="tempoSlider">속도</label>
+                <div class="nudge-group">
+                  <button type="button" class="nudge" id="tempoDown" title="속도 −5%" aria-label="속도 5% 감소">−</button>
+                  <output id="tempoValue" for="tempoSlider">100%</output>
+                  <button type="button" class="nudge" id="tempoUp" title="속도 +5%" aria-label="속도 5% 증가">+</button>
+                </div>
+              </div>
+              <input type="range" id="tempoSlider" min="25" max="200" value="100" step="5" />
+              <div class="slider-ticks" aria-hidden="true">
+                <span>25%</span><span>100%</span><span>200%</span>
+              </div>
+            </div>
+
+            <div class="slider-block">
+              <div class="slider-head">
+                <label for="pitchSlider">피치</label>
+                <div class="nudge-group">
+                  <button type="button" class="nudge" id="pitchDown" title="피치 −1" aria-label="피치 1 반음 감소">−</button>
+                  <output id="pitchValue" for="pitchSlider">0 st</output>
+                  <button type="button" class="nudge" id="pitchUp" title="피치 +1" aria-label="피치 1 반음 증가">+</button>
+                </div>
+              </div>
+              <input type="range" id="pitchSlider" min="-12" max="12" value="0" step="1" />
+              <div class="slider-ticks" aria-hidden="true">
+                <span>−12</span><span>0</span><span>+12</span>
+              </div>
+            </div>
+          </div>
+
           <div class="wave-wrap">
             <canvas id="waveform" width="1200" height="160" aria-label="파형"></canvas>
             <div class="ab-labels" id="abLabels" hidden>
@@ -141,50 +173,6 @@
               A–B 반복
             </button>
             <button type="button" class="chip ghost" id="clearAbBtn" title="구간 초기화" disabled>구간해제</button>
-          </div>
-
-          <div class="sliders">
-            <div class="slider-block">
-              <div class="slider-head">
-                <label for="tempoSlider">속도</label>
-                <div class="nudge-group">
-                  <button type="button" class="nudge" id="tempoDown" title="속도 −5%" aria-label="속도 5% 감소">−</button>
-                  <output id="tempoValue" for="tempoSlider">100%</output>
-                  <button type="button" class="nudge" id="tempoUp" title="속도 +5%" aria-label="속도 5% 증가">+</button>
-                </div>
-              </div>
-              <input type="range" id="tempoSlider" min="25" max="200" value="100" step="1" />
-              <div class="slider-ticks" aria-hidden="true">
-                <span>25%</span><span>100%</span><span>200%</span>
-              </div>
-            </div>
-
-            <div class="slider-block">
-              <div class="slider-head">
-                <label for="pitchSlider">피치</label>
-                <div class="nudge-group">
-                  <button type="button" class="nudge" id="pitchDown" title="피치 −1" aria-label="피치 1 반음 감소">−</button>
-                  <output id="pitchValue" for="pitchSlider">0 st</output>
-                  <button type="button" class="nudge" id="pitchUp" title="피치 +1" aria-label="피치 1 반음 증가">+</button>
-                </div>
-              </div>
-              <input type="range" id="pitchSlider" min="-12" max="12" value="0" step="0.5" />
-              <div class="slider-ticks" aria-hidden="true">
-                <span>−12</span><span>0</span><span>+12</span>
-              </div>
-            </div>
-
-            <div class="slider-block">
-              <div class="slider-head">
-                <label for="volumeSlider">볼륨</label>
-                <div class="nudge-group">
-                  <button type="button" class="nudge" id="volumeDown" title="볼륨 −5%" aria-label="볼륨 5% 감소">−</button>
-                  <output id="volumeValue" for="volumeSlider">80%</output>
-                  <button type="button" class="nudge" id="volumeUp" title="볼륨 +5%" aria-label="볼륨 5% 증가">+</button>
-                </div>
-              </div>
-              <input type="range" id="volumeSlider" min="0" max="100" value="80" step="1" />
-            </div>
           </div>
 
           <div class="mode-row">
