@@ -43,6 +43,8 @@ function isMobileLike() {
   );
 }
 
+export { isMobileLike };
+
 export class BackgroundPlayback {
   constructor() {
     this.keepAlive = null;
@@ -213,7 +215,9 @@ export class BackgroundPlayback {
   /** 백그라운드에서 AudioContext가 suspend되면 주기적으로 깨움 */
   _startWatchdog() {
     this._stopWatchdog();
+    // 화면이 보일 때는 스킵, 백그라운드에서만 유지 시도
     this._watchdog = window.setInterval(() => {
+      if (!document.hidden) return;
       this._onWatchdog?.();
       if (this.keepAlive?.paused) {
         this.keepAlive.play().catch(() => {});
@@ -221,7 +225,7 @@ export class BackgroundPlayback {
       if (this.outEl?.paused) {
         this.outEl.play().catch(() => {});
       }
-    }, 2000);
+    }, 4000);
   }
 
   _stopWatchdog() {

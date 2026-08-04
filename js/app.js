@@ -318,15 +318,28 @@ els.playlistFileInput.addEventListener('change', async () => {
   await refreshPlaylistTracks();
 });
 
-/** 파일 길이만 빠르게 측정 */
+/** 파일 길이만 메타데이터로 측정 (전체 디코딩 생략) */
 async function probeDuration(file) {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const url = URL.createObjectURL(file);
   try {
-    const data = await file.arrayBuffer();
-    const buffer = await ctx.decodeAudioData(data.slice(0));
-    return buffer.duration;
+    const duration = await new Promise((resolve) => {
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      const done = (v) => {
+        audio.onloadedmetadata = null;
+        audio.onerror = null;
+        resolve(v);
+      };
+      audio.onloadedmetadata = () => {
+        const d = audio.duration;
+        done(Number.isFinite(d) && d > 0 ? d : 0);
+      };
+      audio.onerror = () => done(0);
+      audio.src = url;
+    });
+    return duration;
   } finally {
-    await ctx.close().catch(() => {});
+    URL.revokeObjectURL(url);
   }
 }
 

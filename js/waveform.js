@@ -1,24 +1,32 @@
+import { isMobileLike } from './background-playback.js';
+
 /**
  * 오디오 버퍼에서 피크를 추출해 캔버스에 파형을 그립니다.
- * A/B 마커 드래그로 구간 지정 지원
+ * A/B 마커 드래그 + 모바일 드로잉 스로틀
  */
 export class WaveformView {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    this.ctx = canvas.getContext('2d', { alpha: false });
     this.peaks = null;
     this.duration = 0;
-    this.progress = 0; // 0~1
+    this.progress = 0;
     this.markA = null;
     this.markB = null;
     this.abEnabled = false;
     this._onSeek = null;
     this._onMarks = null;
-    this._dragMode = null; // 'seek' | 'A' | 'B'
-    this._minGap = 0.05; // 초 — A/B 최소 간격
+    this._dragMode = null;
+    this._minGap = 0.05;
+    this._isMobile = isMobileLike();
+    this._rafDraw = 0;
+    this._dirty = false;
 
     this._bindPointer();
-    this._ro = new ResizeObserver(() => this.draw());
+    this._ro = new ResizeObserver(() => {
+      this._peaksLayer = null;
+      this.draw(true);
+    });
     this._ro.observe(canvas);
   }
 
@@ -26,31 +34,36 @@ export class WaveformView {
     this._onSeek = cb;
   }
 
-  /** A/B 위치가 바뀔 때 호출 (드래그) */
   onMarks(cb) {
     this._onMarks = cb;
   }
 
   setBuffer(audioBuffer) {
     this.duration = audioBuffer.duration;
-    this.peaks = this._extractPeaks(audioBuffer, 1200);
+    // 모바일: 막대 수↓ + 샘플 스킵으로 피크 추출 가속
+    const bars = this._isMobile ? 480 : 1200;
+    this.peaks = this._extractPeaks(audioBuffer, bars);
     this.progress = 0;
-    this.draw();
+    this._peaksLayer = null;
+    this.draw(true);
   }
 
   setProgress(ratio) {
     this.progress = Math.max(0, Math.min(1, ratio));
-    // 마커 드래그 중에는 재생헤드만 갱신해도 됨
-    this.draw();
+    if (this._isMobile) {
+      this._scheduleDraw();
+    } else {
+      this.draw(false);
+    }
   }
 
   setMarks(a, b, enabled) {
-    // 드래그 중에는 엔진→UI 역동기화로 손맛이 깨지지 않게 스킵
     if (this._dragMode === 'A' || this._dragMode === 'B') return;
     this.markA = a;
     this.markB = b;
     this.abEnabled = enabled;
-    this.draw();
+    this._peaksLayer = null;
+    this.draw(true);
   }
 
   clear() {
@@ -59,19 +72,34 @@ export class WaveformView {
     this.progress = 0;
     this.markA = null;
     this.markB = null;
-    this.draw();
+    this._peaksLayer = null;
+    this.draw(true);
+  }
+
+  _scheduleDraw() {
+    this._dirty = true;
+    if (this._rafDraw) return;
+    this._rafDraw = requestAnimationFrame(() => {
+      this._rafDraw = 0;
+      if (!this._dirty) return;
+      this._dirty = false;
+      this.draw(false);
+    });
   }
 
   _extractPeaks(buffer, bars) {
     const data = buffer.getChannelData(0);
     const block = Math.floor(data.length / bars) || 1;
     const peaks = new Float32Array(bars);
+    // 블록 전체를 훑지 않고 step만큼 건너뛰어 추출 (시각적 차이는 미미)
+    const step = this._isMobile ? Math.max(1, Math.floor(block / 24)) : Math.max(1, Math.floor(block / 48));
 
     for (let i = 0; i < bars; i++) {
       const start = i * block;
+      const end = Math.min(start + block, data.length);
       let max = 0;
-      for (let j = 0; j < block; j++) {
-        const v = Math.abs(data[start + j] || 0);
+      for (let j = start; j < end; j += step) {
+        const v = Math.abs(data[j] || 0);
         if (v > max) max = v;
       }
       peaks[i] = max;
@@ -81,25 +109,25 @@ export class WaveformView {
 
   _cssSize() {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dprCap = this._isMobile ? 1.25 : 2;
+    const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     const w = Math.max(1, Math.floor(rect.width * dpr));
     const h = Math.max(1, Math.floor(rect.height * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
+      this._peaksLayer = null;
     }
     return { w, h, dpr, cssW: rect.width };
   }
 
-  draw() {
+  draw(forceFull = false) {
     const { w, h } = this._cssSize();
     const ctx = this.ctx;
-    ctx.clearRect(0, 0, w, h);
-
-    ctx.fillStyle = 'rgba(19, 36, 28, 0.03)';
-    ctx.fillRect(0, 0, w, h);
 
     if (!this.peaks) {
+      ctx.fillStyle = '#e8efe6';
+      ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = 'rgba(61, 83, 72, 0.35)';
       ctx.font = `${Math.floor(h * 0.12)}px Figtree, sans-serif`;
       ctx.textAlign = 'center';
@@ -108,32 +136,58 @@ export class WaveformView {
       return;
     }
 
-    const mid = h / 2;
-    const barW = w / this.peaks.length;
-    const gap = Math.max(0.5, barW * 0.28);
+    // 파형 정적 레이어 캐시 — 재생 중엔 재생헤드만 다시 그림
+    if (forceFull || !this._peaksLayer || this._peaksLayer.width !== w) {
+      const layer = document.createElement('canvas');
+      layer.width = w;
+      layer.height = h;
+      const lctx = layer.getContext('2d');
+      lctx.fillStyle = 'rgba(232, 239, 230, 1)';
+      lctx.fillRect(0, 0, w, h);
 
-    // A–B 구간 하이라이트
-    if (this.markA != null && this.markB != null && this.duration > 0) {
-      const x1 = (this.markA / this.duration) * w;
-      const x2 = (this.markB / this.duration) * w;
-      ctx.fillStyle = this.abEnabled
-        ? 'rgba(14, 116, 144, 0.22)'
-        : 'rgba(14, 116, 144, 0.1)';
-      ctx.fillRect(x1, 0, Math.max(2, x2 - x1), h);
+      if (this.markA != null && this.markB != null && this.duration > 0) {
+        const x1 = (this.markA / this.duration) * w;
+        const x2 = (this.markB / this.duration) * w;
+        lctx.fillStyle = this.abEnabled
+          ? 'rgba(14, 116, 144, 0.22)'
+          : 'rgba(14, 116, 144, 0.1)';
+        lctx.fillRect(x1, 0, Math.max(2, x2 - x1), h);
+      }
+
+      const mid = h / 2;
+      const barW = w / this.peaks.length;
+      const gap = Math.max(0.5, barW * 0.28);
+      lctx.fillStyle = 'rgba(19, 36, 28, 0.18)';
+      for (let i = 0; i < this.peaks.length; i++) {
+        const bh = Math.max(2, this.peaks[i] * (h * 0.78));
+        const x = i * barW + gap / 2;
+        lctx.fillRect(x, mid - bh / 2, Math.max(1, barW - gap), bh);
+      }
+
+      this._drawMarkerOn(lctx, this.markA, '#0e7490', 'A', false, w, h);
+      this._drawMarkerOn(lctx, this.markB, '#c2410c', 'B', false, w, h);
+      this._peaksLayer = layer;
     }
 
-    // 파형 막대
-    for (let i = 0; i < this.peaks.length; i++) {
-      const amp = this.peaks[i];
-      const bh = Math.max(2, amp * (h * 0.78));
-      const x = i * barW + gap / 2;
-      const played = i / this.peaks.length <= this.progress;
+    ctx.drawImage(this._peaksLayer, 0, 0);
 
-      ctx.fillStyle = played ? '#0d5c45' : 'rgba(19, 36, 28, 0.18)';
-      ctx.fillRect(x, mid - bh / 2, Math.max(1, barW - gap), bh);
+    // 재생 진행 표시 — 모바일은 틴트만, 데스크톱은 막대 재색칠
+    if (this._isMobile) {
+      ctx.fillStyle = 'rgba(13, 92, 69, 0.28)';
+      ctx.fillRect(0, 0, this.progress * w, h);
+    } else {
+      const mid = h / 2;
+      const barW = w / this.peaks.length;
+      const gap = Math.max(0.5, barW * 0.28);
+      const playedUntil = Math.floor(this.progress * this.peaks.length);
+      ctx.fillStyle = '#0d5c45';
+      for (let i = 0; i < playedUntil; i++) {
+        const bh = Math.max(2, this.peaks[i] * (h * 0.78));
+        const x = i * barW + gap / 2;
+        ctx.fillRect(x, mid - bh / 2, Math.max(1, barW - gap), bh);
+      }
     }
 
-    // 재생 헤드
     const px = this.progress * w;
     ctx.strokeStyle = '#084032';
     ctx.lineWidth = Math.max(2, w * 0.002);
@@ -142,19 +196,14 @@ export class WaveformView {
     ctx.lineTo(px, h);
     ctx.stroke();
 
-    // A / B 마커 (드래그 가능)
-    this._drawMarker(this.markA, '#0e7490', 'A', this._dragMode === 'A');
-    this._drawMarker(this.markB, '#c2410c', 'B', this._dragMode === 'B');
+    if (this._dragMode === 'A') this._drawMarkerOn(ctx, this.markA, '#0e7490', 'A', true, w, h);
+    if (this._dragMode === 'B') this._drawMarkerOn(ctx, this.markB, '#c2410c', 'B', true, w, h);
   }
 
-  _drawMarker(time, color, label, active) {
+  _drawMarkerOn(ctx, time, color, label, active, w, h) {
     if (time == null || this.duration <= 0) return;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
     const x = (time / this.duration) * w;
-    const ctx = this.ctx;
 
-    // 넓은 히트 영역을 드래그 중 시각적으로 강조
     if (active) {
       ctx.fillStyle = label === 'A' ? 'rgba(14,116,144,0.12)' : 'rgba(194,65,12,0.12)';
       ctx.fillRect(x - w * 0.01, 0, w * 0.02, h);
@@ -169,17 +218,14 @@ export class WaveformView {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 드래그 핸들(뱃지)
     const bw = Math.max(26, w * 0.022);
     const bh = Math.max(20, h * 0.14);
     const top = Math.max(6, h * 0.04);
     ctx.fillStyle = color;
     ctx.beginPath();
-    const r = Math.max(3, bw * 0.12);
-    roundRect(ctx, x - bw / 2, top, bw, bh, r);
+    roundRect(ctx, x - bw / 2, top, bw, bh, Math.max(3, bw * 0.12));
     ctx.fill();
 
-    // 하단 작은 삼각형(손잡이 느낌)
     ctx.beginPath();
     ctx.moveTo(x - bw * 0.28, top + bh);
     ctx.lineTo(x + bw * 0.28, top + bh);
@@ -200,7 +246,6 @@ export class WaveformView {
     return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   }
 
-  /** CSS 픽셀 기준으로 A/B 히트 테스트 */
   _hitMarker(e) {
     if (this.duration <= 0) return null;
     const rect = this.canvas.getBoundingClientRect();
@@ -235,7 +280,8 @@ export class WaveformView {
       this.markB = Math.max(minB, Math.min(this.duration, time));
     }
 
-    this.draw();
+    this._peaksLayer = null;
+    this.draw(true);
     this._onMarks?.({ a: this.markA, b: this.markB });
   }
 
@@ -288,7 +334,8 @@ export class WaveformView {
       } catch {
         /* ignore */
       }
-      this.draw();
+      this._peaksLayer = null;
+      this.draw(true);
       if (wasMark) {
         this._onMarks?.({ a: this.markA, b: this.markB });
       }
@@ -299,7 +346,7 @@ export class WaveformView {
     this.canvas.addEventListener('pointermove', move);
     this.canvas.addEventListener('pointerup', end);
     this.canvas.addEventListener('pointercancel', end);
-    this.canvas.addEventListener('pointerleave', (e) => {
+    this.canvas.addEventListener('pointerleave', () => {
       if (!this._dragMode) this.canvas.style.cursor = 'pointer';
     });
   }

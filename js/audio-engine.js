@@ -1,18 +1,21 @@
 import { PitchShifter } from 'soundtouchjs';
-import { backgroundPlayback } from './background-playback.js';
+import { backgroundPlayback, isMobileLike } from './background-playback.js';
 
 /**
  * SoundTouch 기반 오디오 엔진
- * — 속도(템포)·피치 독립 제어, 전체/구간 반복, 모바일 백그라운드 재생 보조
+ * — 기본(속도 100%·피치 0)은 경량 BufferSource,
+ *   속도/피치 변경 시에만 SoundTouch 사용 (모바일 성능)
  */
 export class AudioEngine {
   constructor() {
     this.ctx = null;
     this.gain = null;
     this.shifter = null;
+    this.source = null; // 경량 경로 AudioBufferSourceNode
     this.buffer = null;
     this.fileName = '';
     this.playing = false;
+    this.mode = 'lite'; // 'lite' | 'stretch'
 
     this.tempo = 1;
     this.pitchSemitones = 0;
@@ -24,11 +27,22 @@ export class AudioEngine {
     this.markA = null;
     this.markB = null;
 
+    this._pausedAt = 0;
+    this._liteStartedAt = 0; // ctx.currentTime when source started
+    this._liteOffset = 0; // buffer offset at start
+    this._raf = 0;
+    this._lastProgressAt = 0;
+    this._lastMediaPosAt = 0;
     this._onProgress = null;
     this._onState = null;
     this._onEnded = null;
     this._seeking = false;
-    this._bgReady = false;
+    this._ignoreSourceEnd = false;
+
+    this._isMobile = isMobileLike();
+    // 모바일: ScriptProcessor 호출 빈도↓ (지연↑, CPU↓)
+    this._stretchBufferSize = this._isMobile ? 8192 : 4096;
+    this._progressInterval = this._isMobile ? 100 : 50; // ms
   }
 
   onProgress(cb) {
@@ -39,7 +53,6 @@ export class AudioEngine {
     this._onState = cb;
   }
 
-  /** 트랙이 자연 종료되었을 때 (루프가 아닐 때) */
   onEnded(cb) {
     this._onEnded = cb;
   }
@@ -57,16 +70,22 @@ export class AudioEngine {
     });
   }
 
+  /** 속도/피치가 기본이면 SoundTouch 없이 재생 가능 */
+  _needsStretch() {
+    if (this.linkRate) return Math.abs(this.tempo - 1) > 0.002;
+    return Math.abs(this.tempo - 1) > 0.002 || Math.abs(this.pitchSemitones) > 0.01;
+  }
+
   async _ensureContext() {
     if (!this.ctx) {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)({
+        latencyHint: this._isMobile ? 'playback' : 'interactive',
+      });
       this.gain = this.ctx.createGain();
       this.gain.gain.value = this.volume;
 
-      // 모바일: MediaStream → HTMLAudio 로 내보내 잠금화면에서도 미디어로 인식
       const streamDest = backgroundPlayback.ensureStreamOutput(this.ctx);
       if (streamDest) {
-        // 모바일은 HTMLAudio(MediaStream)로만 출력 — 잠금화면 미디어 세션 유지
         this.gain.connect(streamDest);
       } else {
         this.gain.connect(this.ctx.destination);
@@ -82,7 +101,6 @@ export class AudioEngine {
           this.ctx.resume().catch(() => {});
         }
       });
-      this._bgReady = true;
     }
     if (this.ctx.state === 'suspended') {
       await this.ctx.resume();
@@ -90,22 +108,32 @@ export class AudioEngine {
     backgroundPlayback.claimAudioSession();
   }
 
-  /** PitchShifter는 context.sampleRate로 시간을 계산해 버퍼와 어긋날 수 있음 → 보정 */
-  _timeFromShifter() {
-    if (!this.shifter || !this.buffer) return 0;
+  _currentTime() {
+    if (!this.buffer) return 0;
+
+    if (this.mode === 'lite') {
+      if (this.playing && this.source) {
+        const rate = this.linkRate ? this.tempo : 1;
+        const elapsed = (this.ctx.currentTime - this._liteStartedAt) * rate;
+        return Math.min(this.buffer.duration, this._liteOffset + elapsed);
+      }
+      return this._pausedAt;
+    }
+
+    if (!this.shifter) return this._pausedAt;
     const pos = this.shifter._filter?.sourcePosition ?? this.shifter.sourcePosition;
     return pos / this.buffer.sampleRate;
   }
 
-  /** 초 단위 위치로 시크 (버퍼 샘플레이트 기준) */
-  _setPositionSeconds(timeSec) {
-    if (!this.shifter || !this.buffer) return;
-    const clamped = Math.max(0, Math.min(this.buffer.duration, timeSec));
-    const pos = Math.floor(clamped * this.buffer.sampleRate);
-    // PitchShifter 내부 필터 위치를 직접 맞춤 (context/buffer 샘플레이트 불일치 대비)
-    this.shifter._filter.sourcePosition = pos;
-    this.shifter.sourcePosition = pos;
-    this.shifter.timePlayed = clamped;
+  _setPausedAt(timeSec) {
+    const clamped = Math.max(0, Math.min(this.buffer?.duration ?? 0, timeSec));
+    this._pausedAt = clamped;
+    if (this.shifter && this.buffer) {
+      const pos = Math.floor(clamped * this.buffer.sampleRate);
+      this.shifter._filter.sourcePosition = pos;
+      this.shifter.sourcePosition = pos;
+      this.shifter.timePlayed = clamped;
+    }
   }
 
   async loadFile(file) {
@@ -120,8 +148,15 @@ export class AudioEngine {
     this.markA = null;
     this.markB = null;
     this.abEnabled = false;
+    this._pausedAt = 0;
+    this.mode = this._needsStretch() ? 'stretch' : 'lite';
 
-    this._createShifter(0);
+    if (this.mode === 'stretch') {
+      this._createShifter(0);
+    } else {
+      this._disposeShifter();
+    }
+
     this._emitState();
     this._notifyProgress(0);
 
@@ -132,7 +167,7 @@ export class AudioEngine {
     };
   }
 
-  _createShifter(startSec = 0) {
+  _disposeShifter() {
     if (this.shifter) {
       try {
         this.shifter.disconnect();
@@ -142,49 +177,54 @@ export class AudioEngine {
       }
       this.shifter = null;
     }
+  }
 
-    this.shifter = new PitchShifter(this.ctx, this.buffer, 4096, () => {
+  _disposeSource() {
+    this._ignoreSourceEnd = true;
+    if (this.source) {
+      try {
+        this.source.onended = null;
+        this.source.stop();
+      } catch {
+        /* ignore */
+      }
+      try {
+        this.source.disconnect();
+      } catch {
+        /* ignore */
+      }
+      this.source = null;
+    }
+    this._ignoreSourceEnd = false;
+  }
+
+  _createShifter(startSec = 0) {
+    this._disposeShifter();
+    this.mode = 'stretch';
+
+    this.shifter = new PitchShifter(this.ctx, this.buffer, this._stretchBufferSize, () => {
       this._handleEnded();
     });
 
-    this._applyParams();
-    this._setPositionSeconds(startSec);
+    this._applyStretchParams();
+    this._setPausedAt(startSec);
 
+    let eventCount = 0;
     this.shifter.on('play', () => {
       if (this._seeking || !this.playing) return;
+      // 모바일: 매 콜백마다 UI 갱신하지 않음
+      eventCount += 1;
+      if (this._isMobile && eventCount % 2 !== 0) return;
 
-      const time = this._timeFromShifter();
-
-      // A–B 반복: 구간 밖(A 이전·B 이후)이면 A로 복귀
+      const time = this._currentTime();
       if (this._clampToAbLoop(time)) return;
-
-      this._notifyProgress(time);
-      backgroundPlayback.updatePosition({
-        duration: this.buffer?.duration ?? 0,
-        position: time,
-        playbackRate: this.linkRate ? this.tempo : 1,
-      });
+      this._throttledProgress(time);
     });
   }
 
-  /**
-   * A–B 반복 중 위치가 구간 밖이면 A로 이동.
-   * @returns {boolean} 클램프(점프)가 발생했으면 true
-   */
-  _clampToAbLoop(timeSec) {
-    if (!this.abEnabled || this.markA == null || this.markB == null) return false;
-    if (timeSec < this.markA || timeSec >= this.markB - 0.02) {
-      this.seek(this.markA, true);
-      return true;
-    }
-    return false;
-  }
-
-  _applyParams() {
+  _applyStretchParams() {
     if (!this.shifter) return;
-
     if (this.linkRate) {
-      // 레이트 모드: 속도와 피치가 함께 변함
       this.shifter.tempo = 1;
       this.shifter.pitch = 1;
       this.shifter.pitchSemitones = 0;
@@ -197,8 +237,90 @@ export class AudioEngine {
     }
   }
 
+  /** 파라미터 변경 시 lite ↔ stretch 전환 */
+  _syncPlaybackMode() {
+    const wantStretch = this._needsStretch();
+    const wasPlaying = this.playing;
+    const t = this._currentTime();
+
+    if (wantStretch && this.mode !== 'stretch') {
+      if (wasPlaying) this._pauseInternal();
+      this._disposeSource();
+      this._createShifter(t);
+      this._pausedAt = t;
+      if (wasPlaying) this.play();
+      return;
+    }
+
+    if (!wantStretch && this.mode !== 'lite') {
+      if (wasPlaying) this._pauseInternal();
+      this._disposeShifter();
+      this.mode = 'lite';
+      this._pausedAt = t;
+      if (wasPlaying) this.play();
+      return;
+    }
+
+    if (this.mode === 'stretch') {
+      this._applyStretchParams();
+    } else if (this.mode === 'lite' && this.source && this.playing && this.linkRate) {
+      // 레이트만 미세 조정 시 — 재시작으로 반영
+      this._pauseInternal();
+      this._pausedAt = t;
+      this.play();
+    }
+  }
+
+  _clampToAbLoop(timeSec) {
+    if (!this.abEnabled || this.markA == null || this.markB == null) return false;
+    if (timeSec < this.markA || timeSec >= this.markB - 0.02) {
+      this.seek(this.markA, true);
+      return true;
+    }
+    return false;
+  }
+
+  _throttledProgress(time) {
+    const now = performance.now();
+    if (now - this._lastProgressAt < this._progressInterval) return;
+    this._lastProgressAt = now;
+    this._notifyProgress(time);
+
+    if (now - this._lastMediaPosAt > 1000) {
+      this._lastMediaPosAt = now;
+      backgroundPlayback.updatePosition({
+        duration: this.buffer?.duration ?? 0,
+        position: time,
+        playbackRate: this.linkRate ? this.tempo : this.mode === 'lite' ? 1 : 1,
+      });
+    }
+  }
+
+  _startLiteRaf() {
+    this._stopLiteRaf();
+    const tick = () => {
+      if (!this.playing || this.mode !== 'lite') return;
+      const time = this._currentTime();
+      if (this._clampToAbLoop(time)) return;
+      if (time >= this.buffer.duration - 0.02) {
+        this._handleEnded();
+        return;
+      }
+      this._throttledProgress(time);
+      this._raf = requestAnimationFrame(tick);
+    };
+    this._raf = requestAnimationFrame(tick);
+  }
+
+  _stopLiteRaf() {
+    if (this._raf) {
+      cancelAnimationFrame(this._raf);
+      this._raf = 0;
+    }
+  }
+
   _handleEnded() {
-    if (!this.playing) return;
+    if (!this.playing || this._ignoreSourceEnd) return;
 
     if (this.abEnabled && this.markA != null && this.markB != null) {
       this.seek(this.markA, true);
@@ -210,57 +332,82 @@ export class AudioEngine {
       return;
     }
 
-    this.playing = false;
-    try {
-      this.shifter?.disconnect();
-    } catch {
-      /* ignore */
-    }
+    this._pauseInternal();
     backgroundPlayback.stop();
-    this._setPositionSeconds(0);
+    this._setPausedAt(0);
     this._notifyProgress(0);
     this._emitState();
     this._onEnded?.();
+  }
+
+  _pauseInternal() {
+    this._pausedAt = this._currentTime();
+    this.playing = false;
+    this._stopLiteRaf();
+
+    if (this.mode === 'lite') {
+      this._disposeSource();
+    } else if (this.shifter) {
+      try {
+        this.shifter.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   async play() {
     if (!this.buffer) return;
     await this._ensureContext();
 
-    if (!this.shifter) {
-      this._createShifter(0);
-    }
+    let time = this._currentTime();
 
-    const time = this._timeFromShifter();
-
-    // 끝에서 재생 시 처음으로
     if (time >= this.buffer.duration - 0.05) {
-      const start =
-        this.abEnabled && this.markA != null ? this.markA : 0;
-      this._setPositionSeconds(start);
+      time = this.abEnabled && this.markA != null ? this.markA : 0;
+      this._setPausedAt(time);
     }
 
-    // A–B 활성인데 구간 밖이면 A로 이동
     if (this.abEnabled && this.markA != null && this.markB != null) {
-      const t = this._timeFromShifter();
-      if (t < this.markA || t >= this.markB) {
-        this._setPositionSeconds(this.markA);
+      if (time < this.markA || time >= this.markB) {
+        time = this.markA;
+        this._setPausedAt(time);
       }
     }
+
+    this.mode = this._needsStretch() ? 'stretch' : 'lite';
 
     backgroundPlayback.updateMetadata({ title: this.fileName || 'LoopTone' });
     await backgroundPlayback.start();
 
-    this.shifter.connect(this.gain);
-    this.playing = true;
+    if (this.mode === 'lite') {
+      this._disposeSource();
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.buffer;
+      const rate = this.linkRate ? this.tempo : 1;
+      src.playbackRate.value = rate;
+      src.connect(this.gain);
+      src.onended = () => this._handleEnded();
+      this._liteOffset = this._pausedAt;
+      this._liteStartedAt = this.ctx.currentTime;
+      src.start(0, this._pausedAt);
+      this.source = src;
+      this.playing = true;
+      this._startLiteRaf();
+    } else {
+      if (!this.shifter) this._createShifter(this._pausedAt);
+      else this._setPausedAt(this._pausedAt);
+      this.shifter.connect(this.gain);
+      this.playing = true;
+    }
+
     this._emitState();
   }
 
   pause() {
-    if (!this.shifter || !this.playing) return;
-    this.shifter.disconnect();
-    this.playing = false;
+    if (!this.playing) return;
+    this._pauseInternal();
     backgroundPlayback.stop();
+    this._notifyProgress(this._pausedAt);
     this._emitState();
   }
 
@@ -270,32 +417,29 @@ export class AudioEngine {
   }
 
   stop(silent = false) {
-    if (this.shifter) {
-      try {
-        this.shifter.disconnect();
-      } catch {
-        /* ignore */
+    const had = this.playing || this.source || this.shifter;
+    if (this.playing) this._pauseInternal();
+    else {
+      this._disposeSource();
+      if (this.shifter) {
+        try {
+          this.shifter.disconnect();
+        } catch {
+          /* ignore */
+        }
       }
     }
-    this.playing = false;
     backgroundPlayback.stop();
-    if (this.shifter && this.buffer) {
-      this._setPositionSeconds(0);
-      this._notifyProgress(0);
-    }
+    this._setPausedAt(0);
+    if (had || this.buffer) this._notifyProgress(0);
     if (!silent) this._emitState();
   }
 
-  /**
-   * @param {number} timeSec
-   * @param {boolean} resumeIfPlaying 탐색 후 재생 유지
-   */
   seek(timeSec, resumeIfPlaying = this.playing) {
-    if (!this.buffer || !this.shifter) return;
+    if (!this.buffer) return;
 
     let target = Math.max(0, Math.min(this.buffer.duration, timeSec));
 
-    // A–B 반복 중에는 플레이 바가 구간 밖으로 못 나가게 A로 스냅
     if (this.abEnabled && this.markA != null && this.markB != null) {
       if (target < this.markA || target >= this.markB) {
         target = this.markA;
@@ -305,42 +449,36 @@ export class AudioEngine {
     const keepPlaying = resumeIfPlaying && this.playing;
 
     this._seeking = true;
-    if (this.playing) {
-      this.shifter.disconnect();
-      this.playing = false;
-    }
+    if (this.playing) this._pauseInternal();
 
-    this._setPositionSeconds(target);
+    this._setPausedAt(target);
     this._notifyProgress(target);
     this._seeking = false;
 
     if (keepPlaying) {
-      this.shifter.connect(this.gain);
-      this.playing = true;
-      backgroundPlayback.start();
-      this._emitState();
+      this.play();
     } else {
       this._emitState();
     }
   }
 
   skip(deltaSec) {
-    this.seek(this._timeFromShifter() + deltaSec);
+    this.seek(this._currentTime() + deltaSec);
   }
 
   setTempo(tempo) {
     this.tempo = Math.max(0.25, Math.min(2, tempo));
-    this._applyParams();
+    this._syncPlaybackMode();
   }
 
   setPitchSemitones(st) {
     this.pitchSemitones = Math.max(-12, Math.min(12, st));
-    this._applyParams();
+    this._syncPlaybackMode();
   }
 
   setLinkRate(linked) {
     this.linkRate = linked;
-    this._applyParams();
+    this._syncPlaybackMode();
   }
 
   setVolume(v) {
@@ -353,7 +491,7 @@ export class AudioEngine {
     this._emitState();
   }
 
-  setMarkA(timeSec = this._timeFromShifter()) {
+  setMarkA(timeSec = this._currentTime()) {
     this.markA = Math.max(0, timeSec);
     if (this.markB != null && this.markA >= this.markB) {
       this.markB = null;
@@ -362,7 +500,7 @@ export class AudioEngine {
     this._emitState();
   }
 
-  setMarkB(timeSec = this._timeFromShifter()) {
+  setMarkB(timeSec = this._currentTime()) {
     const t = Math.max(0, timeSec);
     if (this.markA != null && t <= this.markA) {
       this.markB = this.markA;
@@ -373,7 +511,6 @@ export class AudioEngine {
     this._emitState();
   }
 
-  /** 파형 드래그로 A/B를 동시에 갱신 */
   setAbMarks(a, b) {
     this.markA = a;
     this.markB = b;
@@ -393,8 +530,7 @@ export class AudioEngine {
     this.abEnabled = on;
     if (on) {
       this.loopFull = false;
-      // 켜는 순간 구간 밖이면 A로 이동
-      const t = this._timeFromShifter();
+      const t = this._currentTime();
       if (t < this.markA || t >= this.markB) {
         this.seek(this.markA, this.playing);
         return;
@@ -411,7 +547,7 @@ export class AudioEngine {
   }
 
   get currentTime() {
-    return this._timeFromShifter();
+    return this._currentTime();
   }
 
   get duration() {
