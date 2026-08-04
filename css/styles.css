@@ -496,6 +496,17 @@ button {
   text-overflow: ellipsis;
 }
 
+.recent-pl {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.recent-sep {
+  margin: 0 0.28rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .recent-item-meta {
   font-size: 0.78rem;
   color: var(--muted);

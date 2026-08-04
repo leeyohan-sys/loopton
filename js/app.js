@@ -316,6 +316,7 @@ els.playlistFileInput.addEventListener('change', async () => {
 
   await refreshPlaylistSelect();
   await refreshPlaylistTracks();
+  await refreshRecentList();
 });
 
 /** 파일 길이만 메타데이터로 측정 (전체 디코딩 생략) */
@@ -353,6 +354,7 @@ els.playlistAddCurrentBtn.addEventListener('click', async () => {
   await addTrackIdToPlaylist(activePlaylistId, currentTrackId);
   await refreshPlaylistSelect();
   await refreshPlaylistTracks();
+  await refreshRecentList();
 });
 
 els.playlistPrevBtn.addEventListener('click', () => playPrevInPlaylist());
@@ -365,6 +367,7 @@ els.playlistTracks.addEventListener('click', async (e) => {
     await removeTrackFromPlaylist(activePlaylistId, removeBtn.dataset.id);
     await refreshPlaylistSelect();
     await refreshPlaylistTracks();
+    await refreshRecentList();
     return;
   }
   const row = e.target.closest('.pl-track');
@@ -385,8 +388,10 @@ els.playlistTracks.addEventListener('keydown', (e) => {
 
 async function refreshRecentList() {
   let items = [];
+  let playlists = [];
   try {
     items = await listRecent();
+    playlists = await listPlaylists();
   } catch (err) {
     console.warn('최근 목록을 불러오지 못했습니다.', err);
   }
@@ -402,11 +407,17 @@ async function refreshRecentList() {
     .map((item) => {
       const active = item.id === currentTrackId ? ' is-active' : '';
       const dur = item.duration ? formatTime(item.duration) : '—';
+      const plNames = playlists
+        .filter((pl) => (pl.trackIds || []).includes(item.id))
+        .map((pl) => pl.name);
+      const titleHtml = plNames.length
+        ? `<span class="recent-pl">${escapeHtml(plNames.join(', '))}</span><span class="recent-sep">·</span>${escapeHtml(item.name)}`
+        : escapeHtml(item.name);
       return `
         <li>
           <div class="recent-item${active}" data-id="${escapeHtml(item.id)}" role="button" tabindex="0">
             <div class="recent-item-main">
-              <div class="recent-item-name">${escapeHtml(item.name)}</div>
+              <div class="recent-item-name">${titleHtml}</div>
               <div class="recent-item-meta">${dur} · ${formatPlayedAt(item.playedAt)}</div>
             </div>
             <div class="recent-item-actions">
