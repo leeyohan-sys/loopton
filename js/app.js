@@ -471,21 +471,29 @@ async function loadFile(file, { fromPlaylist = false } = {}) {
     return;
   }
 
+  const cacheKey = trackIdFromFile(file);
+  const isSameLoaded = cacheKey === currentTrackId && engine.buffer;
+
   els.dropIdle.hidden = false;
   els.trackMeta.hidden = true;
-  els.dropIdle.querySelector('.drop-title').textContent = '디코딩 중…';
+  els.dropIdle.querySelector('.drop-title').textContent = isSameLoaded
+    ? '불러오는 중…'
+    : '디코딩 중…';
 
   try {
-    const { buffer, name, duration } = await engine.loadFile(file);
-    wave.setBuffer(buffer);
+    const { buffer, name, duration, cacheKey: key, fromCache } = await engine.loadFile(file, {
+      cacheKey,
+    });
+    wave.setBuffer(buffer, { cacheKey: key });
 
     els.dropIdle.hidden = true;
     els.trackMeta.hidden = false;
     els.trackName.textContent = name;
-    els.trackInfo.textContent = `${formatTime(duration)} · ${(file.size / 1024 / 1024).toFixed(1)} MB · ${buffer.sampleRate} Hz`;
+    const cacheNote = fromCache ? ' · 캐시' : '';
+    els.trackInfo.textContent = `${formatTime(duration)} · ${(file.size / 1024 / 1024).toFixed(1)} MB · ${buffer.sampleRate} Hz${cacheNote}`;
     els.duration.textContent = formatTime(duration);
 
-    currentTrackId = trackIdFromFile(file);
+    currentTrackId = key;
     setControlsEnabled(true);
     updateAbUi();
     syncPresets();

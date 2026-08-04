@@ -1,5 +1,6 @@
 import { PitchShifter } from 'soundtouchjs';
 import { backgroundPlayback, isMobileLike } from './background-playback.js';
+import { getBufferCache, setBufferCache } from './buffer-cache.js';
 
 /**
  * SoundTouch 기반 오디오 엔진
@@ -136,12 +137,22 @@ export class AudioEngine {
     }
   }
 
-  async loadFile(file) {
+  async loadFile(file, { cacheKey } = {}) {
     await this._ensureContext();
     this.stop(true);
 
-    const arrayBuf = await file.arrayBuffer();
-    const audioBuffer = await this.ctx.decodeAudioData(arrayBuf.slice(0));
+    const key = cacheKey || `${file.name}::${file.size}`;
+    let audioBuffer;
+    const cached = getBufferCache(key);
+
+    if (cached?.buffer) {
+      // 이미 디코딩된 버퍼 재사용
+      audioBuffer = cached.buffer;
+    } else {
+      const arrayBuf = await file.arrayBuffer();
+      audioBuffer = await this.ctx.decodeAudioData(arrayBuf.slice(0));
+      setBufferCache(key, { buffer: audioBuffer, name: file.name });
+    }
 
     this.buffer = audioBuffer;
     this.fileName = file.name;
@@ -164,6 +175,8 @@ export class AudioEngine {
       buffer: audioBuffer,
       name: file.name,
       duration: audioBuffer.duration,
+      cacheKey: key,
+      fromCache: !!cached?.buffer,
     };
   }
 

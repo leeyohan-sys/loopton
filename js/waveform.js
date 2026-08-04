@@ -1,4 +1,5 @@
 import { isMobileLike } from './background-playback.js';
+import { getBufferCache, setPeaksCache } from './buffer-cache.js';
 
 /**
  * 오디오 버퍼에서 피크를 추출해 캔버스에 파형을 그립니다.
@@ -38,13 +39,21 @@ export class WaveformView {
     this._onMarks = cb;
   }
 
-  setBuffer(audioBuffer) {
+  setBuffer(audioBuffer, { cacheKey } = {}) {
     this.duration = audioBuffer.duration;
-    // 모바일: 막대 수↓ + 샘플 스킵으로 피크 추출 가속
-    const bars = this._isMobile ? 480 : 1200;
-    this.peaks = this._extractPeaks(audioBuffer, bars);
     this.progress = 0;
     this._peaksLayer = null;
+
+    const bars = this._isMobile ? 480 : 1200;
+    const cached = cacheKey ? getBufferCache(cacheKey) : null;
+
+    if (cached?.peaks && cached.peaks.length) {
+      this.peaks = cached.peaks;
+    } else {
+      this.peaks = this._extractPeaks(audioBuffer, bars);
+      if (cacheKey) setPeaksCache(cacheKey, this.peaks);
+    }
+
     this.draw(true);
   }
 
