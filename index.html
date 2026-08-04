@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d5c45" />
+    <meta name="description" content="LoopTone — 속도·피치·구간반복이 가능한 웹 음원 플레이어" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <title>LoopTone</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="ambient" aria-hidden="true"></div>
+
+    <div class="app">
+      <header class="brand-block">
+        <p class="brand">LoopTone</p>
+        <h1 class="tagline">연습에 맞춰 속도를 바꾸고, 필요한 구간만 반복하세요.</h1>
+        <p class="lede">MP3 · WAV · OGG · M4A — PC와 모바일 브라우저에서 바로 재생</p>
+        <p class="lede tip">모바일: 화면이 꺼져도 재생이 이어지도록 최적화했습니다. 더 안정적으로 쓰려면 홈 화면에 추가해 주세요.</p>
+      </header>
+
+      <section class="playlist-bar" aria-label="재생목록">
+        <div class="playlist-toolbar">
+          <label class="playlist-label" for="playlistSelect">재생목록</label>
+          <select id="playlistSelect" class="playlist-select" aria-label="재생목록 선택">
+            <option value="">선택 안 함</option>
+          </select>
+          <div class="playlist-toolbar-actions">
+            <button type="button" class="chip" id="playlistNewBtn" title="새 재생목록">＋ 새 목록</button>
+            <button type="button" class="chip ghost" id="playlistRenameBtn" title="이름 변경" disabled>이름</button>
+            <button type="button" class="chip ghost" id="playlistDeleteBtn" title="재생목록 삭제" disabled>삭제</button>
+          </div>
+        </div>
+
+        <div class="playlist-panel" id="playlistPanel" hidden>
+          <div class="playlist-panel-actions">
+            <button type="button" class="chip" id="playlistAddFilesBtn">곡 추가</button>
+            <button type="button" class="chip ghost" id="playlistAddCurrentBtn" disabled>현재 곡 추가</button>
+            <button type="button" class="ctrl mini" id="playlistPrevBtn" title="이전 곡" aria-label="이전 곡" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+            </button>
+            <button type="button" class="ctrl mini" id="playlistNextBtn" title="다음 곡" aria-label="다음 곡" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6v12z"/></svg>
+            </button>
+            <input
+              type="file"
+              id="playlistFileInput"
+              accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac,.webm"
+              multiple
+              hidden
+            />
+          </div>
+          <ul class="playlist-tracks" id="playlistTracks"></ul>
+          <p class="playlist-empty" id="playlistEmpty">곡을 추가하거나, 재생 중인 곡을 넣어 보세요.</p>
+        </div>
+      </section>
+
+      <main class="stage">
+        <section class="dropzone" id="dropzone" tabindex="0" aria-label="음원 파일 불러오기">
+          <input
+            type="file"
+            id="fileInput"
+            accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac,.webm"
+            hidden
+          />
+          <div class="dropzone-inner" id="dropIdle">
+            <span class="drop-icon" aria-hidden="true"></span>
+            <p class="drop-title">음원 파일을 여기에 놓거나 탭하세요</p>
+            <p class="drop-hint">드래그 앤 드롭 · 파일 선택</p>
+          </div>
+          <div class="track-meta" id="trackMeta" hidden>
+            <p class="track-name" id="trackName">—</p>
+            <p class="track-info" id="trackInfo">—</p>
+            <button type="button" class="btn-text" id="changeFileBtn">다른 파일</button>
+          </div>
+        </section>
+
+        <section class="recent" id="recentSection" hidden aria-label="최근 재생">
+          <div class="recent-head">
+            <h2 class="recent-title">최근 재생</h2>
+            <span class="recent-sub">최대 4곡</span>
+          </div>
+          <ul class="recent-list" id="recentList"></ul>
+        </section>
+
+        <section class="player" id="player" aria-label="플레이어">
+          <div class="wave-wrap">
+            <canvas id="waveform" width="1200" height="160" aria-label="파형"></canvas>
+            <div class="ab-labels" id="abLabels" hidden>
+              <span class="ab-label ab-a" id="labelA">A</span>
+              <span class="ab-label ab-b" id="labelB">B</span>
+            </div>
+          </div>
+
+          <div class="time-row">
+            <time id="currentTime">0:00</time>
+            <div class="seek-track" id="seekTrack" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+              <div class="seek-fill" id="seekFill"></div>
+              <div class="seek-ab" id="seekAb" hidden></div>
+              <div class="seek-thumb" id="seekThumb"></div>
+            </div>
+            <time id="duration">0:00</time>
+          </div>
+
+          <div class="transport">
+            <button type="button" class="ctrl" id="skipBackBtn" title="5초 뒤로" aria-label="5초 뒤로">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18V6l-8.5 6L11 18zm.5-6 8.5 6V6l-8.5 6z"/></svg>
+            </button>
+            <button type="button" class="ctrl play" id="playBtn" title="재생/일시정지" aria-label="재생">
+              <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+              <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+            </button>
+            <button type="button" class="ctrl" id="stopBtn" title="정지" aria-label="정지">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+            </button>
+            <button type="button" class="ctrl" id="skipFwdBtn" title="5초 앞으로" aria-label="5초 앞으로">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 6v12l8.5-6L13 6zM3 18l8.5-6L3 6v12z"/></svg>
+            </button>
+          </div>
+
+          <div class="loop-row">
+            <button type="button" class="chip" id="loopBtn" aria-pressed="false" title="전체 반복">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+              전체반복
+            </button>
+            <button type="button" class="chip" id="setABtn" title="구간 시작(A) 지정">A 지정</button>
+            <button type="button" class="chip" id="setBBtn" title="구간 끝(B) 지정">B 지정</button>
+            <button type="button" class="chip" id="abLoopBtn" aria-pressed="false" title="A–B 구간 반복" disabled>
+              A–B 반복
+            </button>
+            <button type="button" class="chip ghost" id="clearAbBtn" title="구간 초기화" disabled>구간해제</button>
+          </div>
+
+          <div class="sliders">
+            <div class="slider-block">
+              <div class="slider-head">
+                <label for="tempoSlider">속도</label>
+                <div class="nudge-group">
+                  <button type="button" class="nudge" id="tempoDown" title="속도 −5%" aria-label="속도 5% 감소">−</button>
+                  <output id="tempoValue" for="tempoSlider">100%</output>
+                  <button type="button" class="nudge" id="tempoUp" title="속도 +5%" aria-label="속도 5% 증가">+</button>
+                </div>
+              </div>
+              <input type="range" id="tempoSlider" min="25" max="200" value="100" step="1" />
+              <div class="slider-ticks" aria-hidden="true">
+                <span>25%</span><span>100%</span><span>200%</span>
+              </div>
+            </div>
+
+            <div class="slider-block">
+              <div class="slider-head">
+                <label for="pitchSlider">피치</label>
+                <div class="nudge-group">
+                  <button type="button" class="nudge" id="pitchDown" title="피치 −1" aria-label="피치 1 반음 감소">−</button>
+                  <output id="pitchValue" for="pitchSlider">0 st</output>
+                  <button type="button" class="nudge" id="pitchUp" title="피치 +1" aria-label="피치 1 반음 증가">+</button>
+                </div>
+              </div>
+              <input type="range" id="pitchSlider" min="-12" max="12" value="0" step="0.5" />
+              <div class="slider-ticks" aria-hidden="true">
+                <span>−12</span><span>0</span><span>+12</span>
+              </div>
+            </div>
+
+            <div class="slider-block">
+              <div class="slider-head">
+                <label for="volumeSlider">볼륨</label>
+                <div class="nudge-group">
+                  <button type="button" class="nudge" id="volumeDown" title="볼륨 −5%" aria-label="볼륨 5% 감소">−</button>
+                  <output id="volumeValue" for="volumeSlider">80%</output>
+                  <button type="button" class="nudge" id="volumeUp" title="볼륨 +5%" aria-label="볼륨 5% 증가">+</button>
+                </div>
+              </div>
+              <input type="range" id="volumeSlider" min="0" max="100" value="80" step="1" />
+            </div>
+          </div>
+
+          <div class="mode-row">
+            <label class="toggle">
+              <input type="checkbox" id="linkRate" />
+              <span class="toggle-ui" aria-hidden="true"></span>
+              <span class="toggle-text">속도+피치 연동 <em>(레이트 모드)</em></span>
+            </label>
+            <div class="presets" aria-label="속도 프리셋">
+              <button type="button" class="preset" data-tempo="50">0.5×</button>
+              <button type="button" class="preset" data-tempo="75">0.75×</button>
+              <button type="button" class="preset" data-tempo="100">1×</button>
+              <button type="button" class="preset" data-tempo="125">1.25×</button>
+              <button type="button" class="preset" data-tempo="150">1.5×</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="foot">
+        <p>스페이스: 재생/일시정지 · ←→: 탐색 · A / B: 구간 · L: 전체반복 · N: 다음 곡 · Shift+P: 이전 곡</p>
+      </footer>
+    </div>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

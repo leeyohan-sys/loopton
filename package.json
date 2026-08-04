@@ -1,0 +1,19 @@
+{
+  "name": "loopton",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "웹 기반 음원 재생기 — 속도/피치/구간반복",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy:check": "vite build"
+  },
+  "dependencies": {
+    "soundtouchjs": "^0.3.0"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
