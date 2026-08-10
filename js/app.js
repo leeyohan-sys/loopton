@@ -1,6 +1,7 @@
 import { AudioEngine, formatTime } from './audio-engine.js';
 import { WaveformView } from './waveform.js';
 import { backgroundPlayback } from './background-playback.js';
+import { createVoiceTempoControl, isSpeechSupported } from './voice-tempo.js';
 import {
   listRecent,
   saveRecent,
@@ -71,6 +72,8 @@ const els = {
   tempoValue: $('tempoValue'),
   tempoDown: $('tempoDown'),
   tempoUp: $('tempoUp'),
+  voiceTempoBtn: $('voiceTempoBtn'),
+  voiceStatus: $('voiceStatus'),
   pitchSlider: $('pitchSlider'),
   pitchValue: $('pitchValue'),
   pitchDown: $('pitchDown'),
@@ -670,6 +673,35 @@ els.pitchDown.addEventListener('click', () => onPitchNudge(-PITCH_STEP));
 els.pitchUp.addEventListener('click', () => onPitchNudge(PITCH_STEP));
 els.volumeDown.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) - VOLUME_STEP));
 els.volumeUp.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) + VOLUME_STEP));
+
+/* —— 음성 속도 조절 (PC · Edge/Chrome) —— */
+const voiceTempo = createVoiceTempoControl({
+  onCommand: (cmd) => {
+    if (cmd.type === 'nudge') {
+      onTempoNudge(cmd.value);
+      els.voiceStatus.textContent = `적용: ${cmd.value > 0 ? '+' : ''}${cmd.value}% ← 「${cmd.raw}」`;
+    } else if (cmd.type === 'set') {
+      applyTempo(cmd.value);
+      els.voiceStatus.textContent = `적용: ${cmd.value}% ← 「${cmd.raw}」`;
+    }
+  },
+  onStatus: (s) => {
+    if (els.voiceStatus) els.voiceStatus.textContent = s;
+  },
+  onListening: (on) => {
+    els.voiceTempoBtn.setAttribute('aria-pressed', String(on));
+    els.voiceTempoBtn.textContent = on ? '듣는 중…' : '음성 속도';
+  },
+});
+
+if (!isSpeechSupported()) {
+  els.voiceTempoBtn.disabled = true;
+  els.voiceStatus.textContent = '이 브라우저는 음성 인식을 지원하지 않습니다 (Edge/Chrome 권장)';
+}
+
+els.voiceTempoBtn.addEventListener('click', () => {
+  voiceTempo.toggle();
+});
 
 els.linkRate.addEventListener('change', () => {
   engine.setLinkRate(els.linkRate.checked);

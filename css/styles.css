@@ -800,6 +800,30 @@ button {
   margin-bottom: 0.15rem;
 }
 
+.voice-tempo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.voice-tempo .chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  animation: pulse 1.8s var(--ease) infinite;
+}
+
+.voice-status {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.3;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
 @media (min-width: 640px) {
   .sliders-top {
     grid-template-columns: 1fr 1fr;
