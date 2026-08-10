@@ -936,6 +936,12 @@ input[type="range"]::-moz-range-thumb {
   padding-top: 0.25rem;
 }
 
+.volume-block {
+  margin-top: 0.15rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;

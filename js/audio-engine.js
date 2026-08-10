@@ -23,7 +23,7 @@ export class AudioEngine {
     this.linkRate = false;
     this.volume = 0.8;
 
-    this.loopFull = false;
+    this.loopFull = true; // 기본: 선택한 곡 반복
     this.abEnabled = false;
     this.markA = null;
     this.markB = null;
@@ -548,6 +548,9 @@ export class AudioEngine {
         this.seek(this.markA, this.playing);
         return;
       }
+    } else if (!this.loopFull) {
+      // A–B 끄면 기본인 한 곡 반복으로 복귀
+      this.loopFull = true;
     }
     this._emitState();
   }
@@ -556,6 +559,7 @@ export class AudioEngine {
     this.markA = null;
     this.markB = null;
     this.abEnabled = false;
+    if (!this.loopFull) this.loopFull = true;
     this._emitState();
   }
 

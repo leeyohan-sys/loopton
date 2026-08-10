@@ -75,6 +75,10 @@ const els = {
   pitchValue: $('pitchValue'),
   pitchDown: $('pitchDown'),
   pitchUp: $('pitchUp'),
+  volumeSlider: $('volumeSlider'),
+  volumeValue: $('volumeValue'),
+  volumeDown: $('volumeDown'),
+  volumeUp: $('volumeUp'),
   linkRate: $('linkRate'),
 };
 
@@ -605,6 +609,7 @@ els.clearAbBtn.addEventListener('click', () => {
 /* —— 슬라이더 —— */
 const TEMPO_STEP = 5; // %
 const PITCH_STEP = 1; // 반음
+const VOLUME_STEP = 5; // %
 
 function applyTempo(pct) {
   const min = Number(els.tempoSlider.min);
@@ -629,12 +634,26 @@ function applyPitch(st, { integer = false } = {}) {
   els.pitchValue.textContent = formatPitch(next);
 }
 
+function applyVolume(v) {
+  const min = Number(els.volumeSlider.min);
+  const max = Number(els.volumeSlider.max);
+  const snapped = Math.round(v / VOLUME_STEP) * VOLUME_STEP;
+  const next = Math.max(min, Math.min(max, snapped));
+  els.volumeSlider.value = String(next);
+  engine.setVolume(next / 100);
+  els.volumeValue.textContent = `${next}%`;
+}
+
 els.tempoSlider.addEventListener('input', () => {
   applyTempo(Number(els.tempoSlider.value));
 });
 
 els.pitchSlider.addEventListener('input', () => {
   applyPitch(Number(els.pitchSlider.value), { integer: true });
+});
+
+els.volumeSlider.addEventListener('input', () => {
+  applyVolume(Number(els.volumeSlider.value));
 });
 
 function onTempoNudge(delta) {
@@ -649,6 +668,8 @@ els.tempoDown.addEventListener('click', () => onTempoNudge(-TEMPO_STEP));
 els.tempoUp.addEventListener('click', () => onTempoNudge(TEMPO_STEP));
 els.pitchDown.addEventListener('click', () => onPitchNudge(-PITCH_STEP));
 els.pitchUp.addEventListener('click', () => onPitchNudge(PITCH_STEP));
+els.volumeDown.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) - VOLUME_STEP));
+els.volumeUp.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) + VOLUME_STEP));
 
 els.linkRate.addEventListener('change', () => {
   engine.setLinkRate(els.linkRate.checked);
@@ -823,7 +844,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-engine.setVolume(0.8);
+engine.setVolume(Number(els.volumeSlider.value) / 100);
 
 (async function init() {
   await refreshPlaylistSelect();
