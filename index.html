@@ -110,12 +110,20 @@
               <div class="slider-ticks" aria-hidden="true">
                 <span>25%</span><span>100%</span><span>200%</span>
               </div>
-              <div class="voice-tempo">
-                <button type="button" class="chip" id="voiceTempoBtn" aria-pressed="false" title="음성으로 속도 조절">
-                  음성 속도
-                </button>
-                <span class="voice-status" id="voiceStatus">Edge/Chrome · 「빠르게」「느리게」「80퍼센트」</span>
+            </div>
+
+            <div class="slider-block voice-panel">
+              <div class="slider-head">
+                <span class="voice-panel-label">음성</span>
+                <div class="nudge-group voice-quick">
+                  <button type="button" class="chip compact" id="tempoSlowBtn" title="속도 −5%">느리게</button>
+                  <button type="button" class="chip compact" id="tempoFastBtn" title="속도 +5%">빠르게</button>
+                </div>
               </div>
+              <button type="button" class="chip voice-main-btn" id="voiceTempoBtn" aria-pressed="false" title="음성으로 속도 조절">
+                음성 속도
+              </button>
+              <p class="voice-status" id="voiceStatus">Edge/Chrome · 「빠르게」「느리게」「80퍼센트」</p>
             </div>
           </div>
 

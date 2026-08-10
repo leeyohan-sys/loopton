@@ -505,15 +505,22 @@ export class AudioEngine {
   }
 
   setMarkA(timeSec = this._currentTime()) {
+    const wasReady = this.markA != null && this.markB != null;
     this.markA = Math.max(0, timeSec);
     if (this.markB != null && this.markA >= this.markB) {
       this.markB = null;
       this.abEnabled = false;
     }
-    this._emitState();
+    const nowReady = this.markA != null && this.markB != null;
+    if (nowReady && !wasReady) {
+      this.setAbEnabled(true);
+    } else {
+      this._emitState();
+    }
   }
 
   setMarkB(timeSec = this._currentTime()) {
+    const wasReady = this.markA != null && this.markB != null;
     const t = Math.max(0, timeSec);
     if (this.markA != null && t <= this.markA) {
       this.markB = this.markA;
@@ -521,10 +528,16 @@ export class AudioEngine {
     } else {
       this.markB = t;
     }
-    this._emitState();
+    const nowReady = this.markA != null && this.markB != null;
+    if (nowReady && !wasReady) {
+      this.setAbEnabled(true);
+    } else {
+      this._emitState();
+    }
   }
 
   setAbMarks(a, b) {
+    const wasReady = this.markA != null && this.markB != null;
     this.markA = a;
     this.markB = b;
     if (this.markA != null && this.markB != null && this.markA >= this.markB) {
@@ -532,10 +545,15 @@ export class AudioEngine {
       this.markA = Math.min(this.markA, mid - 0.025);
       this.markB = Math.max(this.markB, mid + 0.025);
     }
-    if (this.abEnabled && (this.markA == null || this.markB == null)) {
+    const nowReady = this.markA != null && this.markB != null;
+    if (this.abEnabled && !nowReady) {
       this.abEnabled = false;
     }
-    this._emitState();
+    if (nowReady && !wasReady) {
+      this.setAbEnabled(true);
+    } else {
+      this._emitState();
+    }
   }
 
   setAbEnabled(on) {
