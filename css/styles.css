@@ -574,7 +574,7 @@ button {
 #waveform {
   display: block;
   width: 100%;
-  height: clamp(110px, 22vw, 160px);
+  height: clamp(74px, 14.7vw, 107px);
   cursor: pointer;
   touch-action: none;
 }
