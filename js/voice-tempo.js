@@ -1,5 +1,5 @@
 /**
- * PC용 음성 속도 조절 (Web Speech API)
+ * PC용 음성 제어 (속도 + 재생) — Web Speech API
  * Edge / Chrome 권장
  */
 
@@ -53,7 +53,7 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
 
   recognition.onstart = () => {
     setListening(true);
-    onStatus?.('듣는 중… 「빠르게」「느리게」「80퍼센트」「원래대로」');
+    onStatus?.('듣는 중… 「플레이」「멈춰」「스톱」「빠르게」「80퍼센트」');
   };
 
   recognition.onend = () => {
@@ -90,7 +90,7 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
       for (let a = 0; a < result.length; a++) {
         const raw = (result[a].transcript || '').trim();
         if (!raw) continue;
-        const cmd = parseTempoCommand(raw);
+        const cmd = parseVoiceCommand(raw);
         if (cmd) {
           fire(cmd);
           return;
@@ -132,20 +132,29 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
   };
 }
 
-/** 한국어/숫자 속도 명령 파싱 */
+/** @deprecated parseVoiceCommand 사용 */
 export function parseTempoCommand(transcript) {
+  return parseVoiceCommand(transcript);
+}
+
+/** 한국어/영문 음성 명령 파싱 (재생 + 속도) */
+export function parseVoiceCommand(transcript) {
   const raw = transcript.trim();
   let t = raw
     .toLowerCase()
     .replace(/\s+/g, '')
+    .replace(/[.,!?…·]/g, '')
     .replace(/%/g, '퍼센트')
     .replace(/％/g, '퍼센트');
 
   // 영문 간단 대응
   t = t
-    .replace(/faster|speed ?up/g, '빠르게')
-    .replace(/slower|slow ?down/g, '느리게')
-    .replace(/normal|reset/g, '원래대로');
+    .replace(/\bfaster\b|\bspeed ?up\b/g, '빠르게')
+    .replace(/\bslower\b|\bslow ?down\b/g, '느리게')
+    .replace(/\bnormal\b|\breset\b/g, '원래대로');
+
+  const playback = parsePlaybackCommand(t, raw);
+  if (playback) return playback;
 
   // 상대 조절
   if (
@@ -201,6 +210,36 @@ export function parseTempoCommand(transcript) {
   // 한글 숫자 (간단)
   const kor = parseKoreanPercent(t);
   if (kor != null) return { type: 'set', value: kor, raw };
+
+  return null;
+}
+
+/** 재생 / 일시정지 / 정지 */
+function parsePlaybackCommand(t, raw) {
+  // 짧은 영문·한글 고정 표현
+  if (/^(고|고고|고우|go|플레이|재생|재생해|재생해줘|시작해|시작해줘|스타트|play|resume|계속|이어재생|이어해)$/.test(t)) {
+    return { type: 'play', raw };
+  }
+  if (/^(멈춰|멈춰줘|일시정지|일시정지해|퍼스|퍼즈|pause)$/.test(t)) {
+    return { type: 'pause', raw };
+  }
+  if (/^(토글|재생정지)$/.test(t)) {
+    return { type: 'toggle', raw };
+  }
+  if (/^(스톱|스탑|정지|정지해|정지해줘|스톱해|스탑해|그만|그만해|stop)$/.test(t)) {
+    return { type: 'stop', raw };
+  }
+
+  // 문장형: 「재생해 줘」「플레이 해」「스톱 해줘」
+  if (/(재생|플레이|시작해|이어재생|resume|play|go)/.test(t) && !/(정지|스톱|스탑|멈춰|pause)/.test(t)) {
+    if (t.length <= 16) return { type: 'play', raw };
+  }
+  if (/(일시정지|멈춰|퍼스|퍼즈|pause)/.test(t) && !/(재생|플레이)/.test(t)) {
+    if (t.length <= 16) return { type: 'pause', raw };
+  }
+  if (/(스톱|스탑|정지|stop|그만)/.test(t) && !/(재생|플레이|속도)/.test(t)) {
+    if (t.length <= 16) return { type: 'stop', raw };
+  }
 
   return null;
 }

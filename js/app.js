@@ -678,10 +678,35 @@ els.pitchUp.addEventListener('click', () => onPitchNudge(PITCH_STEP));
 els.volumeDown.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) - VOLUME_STEP));
 els.volumeUp.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) + VOLUME_STEP));
 
-/* —— 음성 속도 조절 (PC · Edge/Chrome) —— */
+/* —— 음성 제어 (PC · Edge/Chrome) —— */
 const voiceTempo = createVoiceTempoControl({
   onCommand: (cmd) => {
-    if (cmd.type === 'nudge') {
+    if (cmd.type === 'play') {
+      if (!engine.buffer) {
+        els.voiceStatus.textContent = `곡을 먼저 불러와 주세요 ← 「${cmd.raw}」`;
+        return;
+      }
+      void engine.play();
+      els.voiceStatus.textContent = `재생 ← 「${cmd.raw}」`;
+    } else if (cmd.type === 'pause') {
+      if (engine.playing) {
+        engine.pause();
+        els.voiceStatus.textContent = `일시정지 ← 「${cmd.raw}」`;
+      } else {
+        els.voiceStatus.textContent = `이미 멈춰 있음 ← 「${cmd.raw}」`;
+      }
+    } else if (cmd.type === 'toggle') {
+      if (!engine.buffer) {
+        els.voiceStatus.textContent = `곡을 먼저 불러와 주세요 ← 「${cmd.raw}」`;
+        return;
+      }
+      const willPlay = !engine.playing;
+      engine.toggle();
+      els.voiceStatus.textContent = `${willPlay ? '재생' : '일시정지'} ← 「${cmd.raw}」`;
+    } else if (cmd.type === 'stop') {
+      engine.stop();
+      els.voiceStatus.textContent = `정지 ← 「${cmd.raw}」`;
+    } else if (cmd.type === 'nudge') {
       onTempoNudge(cmd.value);
       els.voiceStatus.textContent = `적용: ${cmd.value > 0 ? '+' : ''}${cmd.value}% ← 「${cmd.raw}」`;
     } else if (cmd.type === 'set') {
@@ -694,7 +719,7 @@ const voiceTempo = createVoiceTempoControl({
   },
   onListening: (on) => {
     els.voiceTempoBtn.setAttribute('aria-pressed', String(on));
-    els.voiceTempoBtn.textContent = on ? '듣는 중…' : '음성 속도';
+    els.voiceTempoBtn.textContent = on ? '듣는 중…' : '음성 제어';
   },
 });
 
