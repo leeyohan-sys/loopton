@@ -1,7 +1,7 @@
 import { AudioEngine, formatTime } from './audio-engine.js';
 import { WaveformView } from './waveform.js';
 import { backgroundPlayback } from './background-playback.js';
-import { createVoiceTempoControl, isSpeechSupported } from './voice-tempo.js';
+import { createVoiceTempoControl, isSpeechSupported, VOICE_GUIDE_IDLE } from './voice-tempo.js';
 import {
   listRecent,
   saveRecent,
@@ -726,6 +726,8 @@ const voiceTempo = createVoiceTempoControl({
 if (!isSpeechSupported()) {
   els.voiceTempoBtn.disabled = true;
   els.voiceStatus.textContent = '이 브라우저는 음성 인식을 지원하지 않습니다 (Edge/Chrome 권장)';
+} else if (els.voiceStatus && !els.voiceStatus.textContent.trim()) {
+  els.voiceStatus.textContent = VOICE_GUIDE_IDLE;
 }
 
 els.voiceTempoBtn.addEventListener('click', () => {

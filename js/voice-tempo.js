@@ -5,6 +5,13 @@
 
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+/** UI·상태 메시지용 기본 가이드 */
+export const VOICE_GUIDE_IDLE =
+  '재생: 시작·플레이 · 멈춤: 멈춰 · 정지: 스톱 · 속도: 빠르게·80퍼센트';
+
+export const VOICE_GUIDE_LISTENING =
+  '듣는 중… 「시작」「멈춰」「스톱」「빠르게」「80퍼센트」';
+
 export function isSpeechSupported() {
   return !!SpeechRecognitionAPI;
 }
@@ -29,11 +36,12 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
   recognition.lang = 'ko-KR';
   recognition.continuous = true;
   recognition.interimResults = false;
-  recognition.maxAlternatives = 3;
+  recognition.maxAlternatives = 5;
 
   let listening = false;
   let wantListen = false;
   let lastFireAt = 0;
+  let lastType = '';
   let lastRaw = '';
 
   function setListening(on) {
@@ -43,17 +51,19 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
 
   function fire(cmd) {
     const now = Date.now();
-    // 같은 말 연속 인식 방지
-    if (cmd.raw === lastRaw && now - lastFireAt < 1200) return;
-    if (now - lastFireAt < 400) return;
+    // 같은 말·같은 동작 연속 인식 방지 (다른 명령은 더 빠르게 허용)
+    if (cmd.type === lastType && cmd.raw === lastRaw && now - lastFireAt < 1400) return;
+    if (cmd.type === lastType && now - lastFireAt < 700) return;
+    if (now - lastFireAt < 280) return;
     lastFireAt = now;
+    lastType = cmd.type;
     lastRaw = cmd.raw;
     onCommand(cmd);
   }
 
   recognition.onstart = () => {
     setListening(true);
-    onStatus?.('듣는 중… 「플레이」「멈춰」「스톱」「빠르게」「80퍼센트」');
+    onStatus?.(VOICE_GUIDE_LISTENING);
   };
 
   recognition.onend = () => {
@@ -64,10 +74,10 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
         recognition.start();
       } catch {
         wantListen = false;
-        onStatus?.('음성 인식이 중지되었습니다.');
+        onStatus?.('음성 인식이 중지되었습니다. 버튼을 다시 눌러 주세요.');
       }
     } else {
-      onStatus?.('음성 인식 꺼짐');
+      onStatus?.(VOICE_GUIDE_IDLE);
     }
   };
 
@@ -87,18 +97,26 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (!result.isFinal) continue;
+
+      // 대안 후보를 모두 돌려 보고 먼저 매칭되는 명령 채택
+      let matched = null;
+      const heardList = [];
       for (let a = 0; a < result.length; a++) {
         const raw = (result[a].transcript || '').trim();
         if (!raw) continue;
+        heardList.push(raw);
         const cmd = parseVoiceCommand(raw);
         if (cmd) {
-          fire(cmd);
-          return;
+          matched = cmd;
+          break;
         }
       }
-      // 인식은 됐지만 명령이 아님
-      const heard = (result[0]?.transcript || '').trim();
-      if (heard) onStatus?.(`들은 말: 「${heard}」 — 명령을 다시 말해 주세요`);
+      if (matched) {
+        fire(matched);
+        return;
+      }
+      const heard = heardList[0];
+      if (heard) onStatus?.(`들은 말: 「${heard}」 — 「시작」「스톱」「멈춰」「빠르게」`);
     }
   };
 
@@ -123,7 +141,7 @@ export function createVoiceTempoControl({ onCommand, onStatus, onListening }) {
         /* ignore */
       }
       setListening(false);
-      onStatus?.('음성 인식 꺼짐');
+      onStatus?.(VOICE_GUIDE_IDLE);
     },
     toggle() {
       if (wantListen) this.stop();
@@ -137,36 +155,79 @@ export function parseTempoCommand(transcript) {
   return parseVoiceCommand(transcript);
 }
 
-/** 한국어/영문 음성 명령 파싱 (재생 + 속도) */
-export function parseVoiceCommand(transcript) {
-  const raw = transcript.trim();
-  let t = raw
+/** STT 오인식·표기 정규화 */
+function normalizeTranscript(transcript) {
+  let t = transcript
+    .trim()
     .toLowerCase()
+    .replace(/[.,!?…·"'`~]/g, '')
     .replace(/\s+/g, '')
-    .replace(/[.,!?…·]/g, '')
     .replace(/%/g, '퍼센트')
     .replace(/％/g, '퍼센트');
 
-  // 영문 간단 대응
+  // 영문 → 한글 키워드
   t = t
-    .replace(/\bfaster\b|\bspeed ?up\b/g, '빠르게')
-    .replace(/\bslower\b|\bslow ?down\b/g, '느리게')
-    .replace(/\bnormal\b|\breset\b/g, '원래대로');
+    .replace(/speedup|faster/g, '빠르게')
+    .replace(/slowdown|slower/g, '느리게')
+    .replace(/normal|reset/g, '원래대로')
+    .replace(/resume/g, '이어재생')
+    .replace(/start/g, '시작')
+    .replace(/play/g, '플레이')
+    .replace(/pause/g, '일시정지')
+    .replace(/stop+|stopp|stock|stalk|halt/g, '스톱')
+    .replace(/go/g, '고');
+
+  // 재생 계열 오인식·변형
+  t = t
+    .replace(/스타또|스타트|시잍|시잘/g, '시작')
+    .replace(/시작해줘|시작해|시작하/g, '시작')
+    .replace(/플래이|푸레이|플레이해/g, '플레이')
+    .replace(/재생해줘|재생해|재생하/g, '재생')
+    .replace(/고고|고우/g, '고')
+    .replace(/틀어줘|틀어봐|틀어|켜줘/g, '시작');
+
+  // 정지 계열 오인식 (스톱 ↔ 스탑 등)
+  t = t
+    .replace(/스토프|스투프|스또프|스또쁘|스텁|스또|서톱|스탑|스톱해|스탑해/g, '스톱')
+    .replace(/정지해줘|정지해|중지해|종료해|그만해/g, '정지')
+    .replace(/중지|종료/g, '정지');
+
+  // 일시정지
+  t = t
+    .replace(/퍼즈|퍼스|포즈/g, '일시정지')
+    .replace(/멈춰줘|멈춰라|멈처|멈취|일시멈춰/g, '멈춰')
+    .replace(/일시정지해/g, '일시정지');
+
+  // 말미 부탁·감탄
+  t = t.replace(/(해줘|해줘요|해주세요|줘요|이요|요)+$/g, '');
+
+  return t;
+}
+
+/** 한국어/영문 음성 명령 파싱 (재생 + 속도) */
+export function parseVoiceCommand(transcript) {
+  const raw = transcript.trim();
+  const t = normalizeTranscript(raw);
 
   const playback = parsePlaybackCommand(t, raw);
   if (playback) return playback;
 
-  // 상대 조절
+  // 상대 조절 — "올려/내려"는 속도 문맥일 때만 (단독·짧은 말은 제외해 오작동 줄임)
   if (
-    /(빠르게|빨리|더빠르게|속도올려|올려|업|가속)/.test(t) &&
-    !/(느리|천천히)/.test(t)
+    /(빠르게|빨리|더빠르게|속도올려|속도업|가속)/.test(t) ||
+    (/^(올려|업)$/.test(t) || /(속도를)?올려/.test(t))
   ) {
-    const big = /(많이|크게|확)/.test(t);
-    return { type: 'nudge', value: big ? 10 : 5, raw };
+    if (!/(느리|천천히)/.test(t)) {
+      const big = /(많이|크게|확)/.test(t);
+      return { type: 'nudge', value: big ? 10 : 5, raw };
+    }
   }
-  if (/(느리게|천천히|더느리게|속도내려|내려|다운|감속)/.test(t)) {
+  if (/(느리게|천천히|더느리게|속도내려|속도다운|감속)/.test(t) || /내려/.test(t) && /속도/.test(t)) {
     const big = /(많이|크게|확)/.test(t);
     return { type: 'nudge', value: big ? -10 : -5, raw };
+  }
+  if (/^(내려|다운)$/.test(t)) {
+    return { type: 'nudge', value: -5, raw };
   }
 
   // 프리셋 표현
@@ -190,7 +251,7 @@ export function parseVoiceCommand(transcript) {
   }
 
   // "배속" 소수: 0.5배 1.25배 1.5배 2배
-  const mul = t.match(/(?:속도)?(\d+(?:\.\d+)?)\s*배/);
+  const mul = t.match(/(?:속도)?(\d+(?:\.\d+)?)배/);
   if (mul) {
     const n = Number(mul[1]);
     if (n > 0 && n <= 2.5) {
@@ -199,9 +260,9 @@ export function parseVoiceCommand(transcript) {
   }
 
   // 퍼센트 / 숫자
-  const pct = t.match(/(?:속도)?(\d{2,3})\s*(?:퍼센트|프로|%|％)?/);
+  const pct = t.match(/(?:속도)?(\d{2,3})(?:퍼센트|프로)?/);
   if (pct) {
-    let n = Number(pct[1]);
+    const n = Number(pct[1]);
     if (n >= 25 && n <= 200) {
       return { type: 'set', value: n, raw };
     }
@@ -214,34 +275,58 @@ export function parseVoiceCommand(transcript) {
   return null;
 }
 
-/** 재생 / 일시정지 / 정지 */
+/**
+ * 재생 / 일시정지 / 정지
+ * 키워드가 포함되면 짧은 발화로 간주하고 매칭 (STT가 앞뒤를 붙이는 경우 대비)
+ */
 function parsePlaybackCommand(t, raw) {
-  // 짧은 영문·한글 고정 표현
-  if (/^(고|고고|고우|go|플레이|재생|재생해|재생해줘|시작해|시작해줘|스타트|play|resume|계속|이어재생|이어해)$/.test(t)) {
-    return { type: 'play', raw };
+  if (!t) return null;
+
+  const playKeys = ['시작', '플레이', '재생', '고', '이어재생', '계속'];
+  const pauseKeys = ['멈춰', '일시정지', '일시멈춤'];
+  const stopKeys = ['스톱', '정지', '그만'];
+  const toggleKeys = ['토글', '재생정지'];
+
+  // 우선순위: 일시정지 > 정지 > 재생
+  // (「일시정지」에 「정지」가 포함되므로 pause를 먼저 판별)
+  if (hasAny(t, pauseKeys)) {
+    if (isShortCommand(t, pauseKeys) || endsWithKey(t, pauseKeys)) {
+      return { type: 'pause', raw };
+    }
   }
-  if (/^(멈춰|멈춰줘|일시정지|일시정지해|퍼스|퍼즈|pause)$/.test(t)) {
-    return { type: 'pause', raw };
+  if (hasAny(t, stopKeys) && !hasAny(t, pauseKeys)) {
+    if (isShortCommand(t, stopKeys) || endsWithKey(t, stopKeys)) {
+      return { type: 'stop', raw };
+    }
   }
-  if (/^(토글|재생정지)$/.test(t)) {
+  if (hasAny(t, toggleKeys)) {
     return { type: 'toggle', raw };
   }
-  if (/^(스톱|스탑|정지|정지해|정지해줘|스톱해|스탑해|그만|그만해|stop)$/.test(t)) {
-    return { type: 'stop', raw };
-  }
-
-  // 문장형: 「재생해 줘」「플레이 해」「스톱 해줘」
-  if (/(재생|플레이|시작해|이어재생|resume|play|go)/.test(t) && !/(정지|스톱|스탑|멈춰|pause)/.test(t)) {
-    if (t.length <= 16) return { type: 'play', raw };
-  }
-  if (/(일시정지|멈춰|퍼스|퍼즈|pause)/.test(t) && !/(재생|플레이)/.test(t)) {
-    if (t.length <= 16) return { type: 'pause', raw };
-  }
-  if (/(스톱|스탑|정지|stop|그만)/.test(t) && !/(재생|플레이|속도)/.test(t)) {
-    if (t.length <= 16) return { type: 'stop', raw };
+  if (hasAny(t, playKeys) && !hasAny(t, stopKeys) && !hasAny(t, pauseKeys)) {
+    if (isShortCommand(t, playKeys) || endsWithKey(t, playKeys)) {
+      return { type: 'play', raw };
+    }
   }
 
   return null;
+}
+
+function hasAny(t, keys) {
+  return keys.some((k) => t.includes(k));
+}
+
+function endsWithKey(t, keys) {
+  return keys.some((k) => t.endsWith(k));
+}
+
+/** 키워드 + 짧은 군더더기만 있는 발화 */
+function isShortCommand(t, keys) {
+  if (!keys.some((k) => t.includes(k))) return false;
+  if (t.length <= 14) return true;
+  let rest = t;
+  for (const k of keys) rest = rest.split(k).join('');
+  rest = rest.replace(/(음악|노래|곡|좀|제발|바로|이제|다시|한번|해주세요|해줘)/g, '');
+  return rest.length <= 4;
 }
 
 function parseKoreanPercent(t) {
@@ -264,13 +349,12 @@ function parseKoreanPercent(t) {
     이백: 200,
   };
   for (const [k, v] of Object.entries(map)) {
+    if (t.includes(k + '퍼센트') || t.includes(k + '프로')) return v;
+  }
+  for (const [k, v] of Object.entries(map)) {
     if (t.includes(k) && (t.includes('퍼센트') || t.includes('프로') || t.includes('속도') || t.endsWith(k))) {
       return v;
     }
-  }
-  // "팔십퍼센트" 등
-  for (const [k, v] of Object.entries(map)) {
-    if (t.includes(k + '퍼센트') || t.includes(k + '프로')) return v;
   }
   return null;
 }
