@@ -115,14 +115,10 @@
             <div class="slider-block voice-panel">
               <div class="slider-head">
                 <span class="voice-panel-label">음성</span>
-                <div class="nudge-group voice-quick">
-                  <button type="button" class="chip compact" id="tempoSlowBtn" title="속도 −5%">느리게</button>
-                  <button type="button" class="chip compact" id="tempoFastBtn" title="속도 +5%">빠르게</button>
-                </div>
+                <button type="button" class="chip compact voice-main-btn" id="voiceTempoBtn" aria-pressed="false" title="음성으로 재생·속도 조절">
+                  음성 제어
+                </button>
               </div>
-              <button type="button" class="chip voice-main-btn" id="voiceTempoBtn" aria-pressed="false" title="음성으로 재생·속도 조절">
-                음성 제어
-              </button>
               <p class="voice-status" id="voiceStatus">재생: 시작·플레이 · 멈춤: 멈춰 · 정지: 스톱 · 속도: 빠르게·80퍼센트</p>
               <ul class="voice-guide" aria-label="음성 명령 안내">
                 <li><strong>재생</strong> 시작, 플레이, 재생, 고, 틀어</li>

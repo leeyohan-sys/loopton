@@ -72,8 +72,6 @@ const els = {
   tempoValue: $('tempoValue'),
   tempoDown: $('tempoDown'),
   tempoUp: $('tempoUp'),
-  tempoFastBtn: $('tempoFastBtn'),
-  tempoSlowBtn: $('tempoSlowBtn'),
   voiceTempoBtn: $('voiceTempoBtn'),
   voiceStatus: $('voiceStatus'),
   pitchSlider: $('pitchSlider'),
@@ -671,8 +669,6 @@ function onPitchNudge(delta) {
 
 els.tempoDown.addEventListener('click', () => onTempoNudge(-TEMPO_STEP));
 els.tempoUp.addEventListener('click', () => onTempoNudge(TEMPO_STEP));
-els.tempoFastBtn.addEventListener('click', () => onTempoNudge(TEMPO_STEP));
-els.tempoSlowBtn.addEventListener('click', () => onTempoNudge(-TEMPO_STEP));
 els.pitchDown.addEventListener('click', () => onPitchNudge(-PITCH_STEP));
 els.pitchUp.addEventListener('click', () => onPitchNudge(PITCH_STEP));
 els.volumeDown.addEventListener('click', () => applyVolume(Number(els.volumeSlider.value) - VOLUME_STEP));
