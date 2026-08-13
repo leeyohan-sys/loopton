@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="LoopTone">
+  <rect width="128" height="128" rx="28" fill="#0d5c45"/>
+  <path d="M36 64c0-14 10-26 28-26v12c-10 0-16 6-16 14s6 14 16 14v12c-18 0-28-12-28-26z" fill="#e8efe6"/>
+  <circle cx="78" cy="48" r="10" fill="#f4fff9"/>
+  <circle cx="78" cy="80" r="10" fill="#f4fff9"/>
+  <path d="M78 48v32" stroke="#f4fff9" stroke-width="8" stroke-linecap="round"/>
+</svg>

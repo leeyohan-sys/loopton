@@ -1,0 +1,18 @@
+{
+  "name": "LoopTone",
+  "short_name": "LoopTone",
+  "description": "속도·피치·구간반복 음원 플레이어",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#e8efe6",
+  "theme_color": "#0d5c45",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
